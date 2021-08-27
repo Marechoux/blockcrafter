@@ -34,7 +34,8 @@ class BlockImages:
     def __init__(self):
         self.blocks = []
 
-    def append(self, image):
+    def append(self, array):
+        image = Image.fromarray(array)
         self.blocks.append(image)
         return len(self.blocks) - 1
 
@@ -110,12 +111,21 @@ class Canvas(app.Canvas):
                     return True
             return False
 
-        def write_block_info(blockstate, variant, indices):
+        def write_block_info(blockstate, conditions, indices):
             name = blockstate.prefix + ":" + blockstate.name
             properties = dict(blockstate.extra_properties)
-            properties["color"] = str(indices[0])
-            properties["uv"] = str(indices[1])
-            print("%s %s %s" % (name, mcmodel.encode_variant(variant), mcmodel.encode_variant(properties)), file=finfo)
+            colorsIdx = []
+            uvsIdx = []
+            idxCnt = len(indices)
+            idx = 0
+            while idx<idxCnt:
+                colorsIdx.append(str(indices[idx]))
+                idx += 1
+                uvsIdx.append(str(indices[idx]))
+                idx += 1
+            properties["color"] = ":".join(colorsIdx)
+            properties["uv"] = ":".join(uvsIdx)
+            print("%s %s %s" % (name, mcmodel.encode_variant(conditions), mcmodel.encode_variant(properties)), file=finfo)
 
         images = BlockImages()
         for blockstate in blockstates:
@@ -123,58 +133,68 @@ class Canvas(app.Canvas):
             if not is_blockstate_included(name):
                 continue
             glblock = render.Block(blockstate)
-            for index, variant in enumerate(blockstate.variants):
-                modes = ["color", "uv"]
+            for _dummy_, conditions in enumerate(blockstate.variants):
+                # Get the number of alternatives model to render, and loop through them
+                variant_idx = 0
+                variant_cnt = 1
                 indices = []
-                for mode in modes:
-                    if not self.args.no_render:
-                        gloo.clear(color=True, depth=True)
-                        actual_rotation = rotation
-                        if name == "minecraft:full_water":
-                            actual_rotation = 0
-                        if blockstate.disable_blending or mode=="uv":
-                            render.set_blending("opaque")
-                        else:
-                            render.set_blending("premultiplied")
-                        if blockstate.disable_culling:
-                            render.apply_face_culling(on=False)
-                        else:
-                            render.apply_face_culling(on=True)
-                        actual_model = render.apply_model_rotation(model, rotation=0)
-                        glblock.render(variant, actual_model, view, projection, rotation=actual_rotation, mode=mode)
+                if "variant_cnt" in blockstate.extra_properties:
+                    variant_cnt = int(blockstate.extra_properties["variant_cnt"])
+                while variant_idx < variant_cnt:
+                    modes = ["color", "uv"]
+                    for mode in modes:
+                        if not self.args.no_render:
+                            gloo.clear(color=True, depth=True)
+                            actual_rotation = rotation
+                            if name == "minecraft:full_water":
+                                actual_rotation = 0
+                            if blockstate.disable_blending or mode=="uv":
+                                render.set_blending("opaque")
+                            else:
+                                render.set_blending("premultiplied")
+                            if blockstate.disable_culling:
+                                render.apply_face_culling(on=False)
+                            else:
+                                render.apply_face_culling(on=True)
+                            actual_model = render.apply_model_rotation(model, rotation=0)
+                            glblock.render(conditions, variant_idx, actual_model, view, projection, rotation=actual_rotation, mode=mode)
 
-                    array = np.array(fbo.read("color"))
-                    if blockstate.disable_blending:
-                        # make image opaque
-                        if mode == "color":
-                            array[:, :, 3] = (array[:, :, 3] > 0) * 255
-                    image = Image.fromarray(array)
-                    index = images.append(image)
-                    indices.append(index)
+                        array = np.array(fbo.read("color"))
+                        if blockstate.disable_blending:
+                            # make image opaque
+                            if mode == "color":
+                                array[:, :, 3] = (array[:, :, 3] > 0) * 255
+                        index = images.append(array)
+                        indices.append(index)
+                    variant_idx += 1
 
                 # waterlogged blocks need several variants written out
                 if blockstate.waterloggable:
-                    variant = dict(variant)
+                    conditions = dict(conditions)
                     # 1. waterlogged version (will get water on top)
                     # (some blocks are always waterlogged, they don't have the waterlogged property)
                     if not blockstate.inherently_waterlogged:
-                        variant["waterlogged"] = "true"
-                    write_block_info(blockstate, variant, indices)
+                        conditions["waterlogged"] = "true"
+                    write_block_info(blockstate, conditions, indices)
 
                     # 2. non-waterlogged version
                     # (only blocks that are not always waterlogged need this)
                     if not blockstate.inherently_waterlogged:
-                        variant["waterlogged"] = "false"
-                        write_block_info(blockstate, variant, indices)
+                        conditions["waterlogged"] = "false"
+                        write_block_info(blockstate, conditions, indices)
 
                     # 3. blocks that are waterlogged in Minecraft but don't get the water on top in Mapcrafter
                     # (because there is water on top already, Mapcrafter needs this extra state internally)
-                    variant["was_waterlogged"] = "true"
-                    variant["waterlogged"] = "false"
-                    write_block_info(blockstate, variant, indices)
+                    conditions["was_waterlogged"] = "true"
+                    conditions["waterlogged"] = "false"
+                    write_block_info(blockstate, conditions, indices)
+
+                    # Remove the keys as we may be looping and reuse the 'conditions' object
+                    conditions.pop("was_waterlogged", None)
+                    conditions.pop("waterlogged", None)
                 else:
                     # normal blocks just get their info written out
-                    write_block_info(blockstate, variant, indices)
+                    write_block_info(blockstate, conditions, indices)
 
         if not self.args.no_render:
             images.export(columns=COLUMNS).save(image_path)

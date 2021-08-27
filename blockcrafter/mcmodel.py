@@ -512,13 +512,16 @@ class Blockstate:
         self.properties = self._get_properties()
         self.variants = self._get_variants(self.properties)
     
-    def evaluate_variant(self, variant):
+    def evaluate_variant(self, variant, alt = 0):
         modelrefs = []
         if "variants" in self.data:
             for condition, model in self.data["variants"].items():
                 condition = parse_variant(condition)
                 if is_condition_fulfilled(condition, variant):
-                    modelrefs.append(model)
+                    if isinstance(model, list):
+                        modelrefs.append(model)
+                    else:
+                        modelrefs.append([model])
         elif "multipart" in self.data:
             for part in self.data["multipart"]:
                 if not "when" in part:
@@ -539,9 +542,8 @@ class Blockstate:
 
         evaluated = []
         for modelref in modelrefs:
-            # TODO
             if isinstance(modelref, list):
-                modelref = modelref[0]
+                modelref = modelref[alt]
             model_name = modelref["model"]
             # The model can have the minecraft: namespace in it since 1.16
             if model_name.startswith(self.MINECRAFT_NAMESPACE):
@@ -574,7 +576,11 @@ class Blockstate:
 
         if "variants" in self.data:
             for condition, variant in self.data["variants"].items():
-                apply_condition(parse_variant(condition))
+                # Check if it's a block with variant renders
+                if condition == "" and len(variant) > 1:
+                    self.extra_properties["variant_cnt"] = str(len(variant))
+                else:
+                    apply_condition(parse_variant(condition))
         elif "multipart" in self.data:
             for part in self.data["multipart"]:
                 if not "when" in part:
@@ -700,7 +706,7 @@ if __name__ == "__main__":
         print("#variants:", len(blockstate.variants))
         for variant in blockstate.variants:
             print(variant)
-            for model, transformation in blockstate.evaluate_variant(variant):
+            for model, transformation in blockstate.evaluate_variant(variant, 0):
                 print("=> ", model, transformation)
         print("")
     print("Total variants:", total_variants)

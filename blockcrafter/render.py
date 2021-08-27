@@ -465,18 +465,18 @@ class Block:
         self.models = {}
         self.variants = {}
 
-    def _load_variant(self, variant):
+    def _load_variant(self, variant, alt):
         modelrefs = []
-        for model, transformation in self.blockstate.evaluate_variant(variant):
+        for model, transformation in self.blockstate.evaluate_variant(variant, alt):
             if not model.name in self.models:
                 self.models[model.name] = Model(model)
             modelrefs.append((self.models[model.name], transformation))
         return modelrefs
 
-    def render(self, variant, model, view, projection, rotation=0, mode="color"):
-        variant_str = mcmodel.encode_variant(variant)
+    def render(self, variant, alt, model, view, projection, rotation=0, mode="color"):
+        variant_str = mcmodel.encode_variant(variant) + "#" + str(alt)
         if variant_str not in self.variants:
-            self.variants[variant_str] = self._load_variant(variant)
+            self.variants[variant_str] = self._load_variant(variant, alt)
 
         modelrefs = self.variants[variant_str]
         for glmodel, transformation  in modelrefs:
