@@ -1,12 +1,14 @@
 {
-    "parent": "block/water",
     "elements": [
         {   "from": [ 0, 0, 0 ],
             "to": [ 16, 4, 16 ],
             "faces": {
+                "down":  { "texture": "#texture", "cullface": "down" },
                 "up":    { "texture": "#texture", "cullface": "up" },
+                "north": { "uv" : [0, 12, 16, 16], "texture": "#texture", "cullface": "north" },
                 "south": { "uv" : [0, 12, 16, 16], "texture": "#texture", "cullface": "south" },
-                "west":  { "uv" : [0, 12, 16, 16], "texture": "#texture", "cullface": "west" }
+                "west":  { "uv" : [0, 12, 16, 16], "texture": "#texture", "cullface": "west" },
+                "east":  { "uv" : [0, 12, 16, 16], "texture": "#texture", "cullface": "east" }
             }
         }
     ]

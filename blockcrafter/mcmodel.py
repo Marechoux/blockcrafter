@@ -544,14 +544,15 @@ class Blockstate:
         for modelref in modelrefs:
             if isinstance(modelref, list):
                 modelref = modelref[alt]
-            model_name = modelref["model"]
-            # The model can have the minecraft: namespace in it since 1.16
-            if model_name.startswith(self.MINECRAFT_NAMESPACE):
-                model_name = model_name[len(self.MINECRAFT_NAMESPACE):]
-            model_transformation = dict(modelref)
-            del model_transformation["model"]
-            model = self.assets.get_model(self.prefix + "/models/" + model_name + ".json")
-            evaluated.append((model, model_transformation))
+            if "model" in modelref:
+                model_name = modelref["model"]
+                # The model can have the minecraft: namespace in it since 1.16
+                if model_name.startswith(self.MINECRAFT_NAMESPACE):
+                    model_name = model_name[len(self.MINECRAFT_NAMESPACE):]
+                model_transformation = dict(modelref)
+                del model_transformation["model"]
+                model = self.assets.get_model(self.prefix + "/models/" + model_name + ".json")
+                evaluated.append((model, model_transformation))
         return evaluated
 
     def _get_properties(self):
@@ -662,7 +663,7 @@ class Model:
 #    return resolve_texture(texturesdef, texturesdef[name])
 
 def parse_variant(condition):
-    if condition == "":
+    if condition == "" or condition == "-":
         return {}
     return dict(map(lambda pair: pair.split("="), condition.split(",")))
 
@@ -674,6 +675,14 @@ def encode_variant(variant):
     return ",".join(map(lambda i: "=".join(i), items))
 
 def is_condition_fulfilled(condition, variant):
+
+    # Special case : Empty condition
+    if len(condition) == 0:
+        if len(variant) == 0:
+            return True
+        else:
+            return False
+
     # condition and variant are both dictionaries
     # key => value mean that variable 'key' has value 'value'
     # ==> variant variables must have same values as condition

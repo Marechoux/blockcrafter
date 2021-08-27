@@ -10,12 +10,17 @@ COPY . /blockcrafter
 RUN cd /blockcrafter && pip wheel .
 
 
-FROM python:3-alpine
+FROM python:alpine3.12
 
-RUN apk --no-cache add mesa-osmesa mesa-gles libpng freetype fontconfig-dev libjpeg-turbo openblas binutils shadow
+RUN apk --no-cache add mesa-osmesa mesa-gles libpng freetype fontconfig-dev libjpeg-turbo openblas binutils shadow patch
+RUN pip install --upgrade ptvsd
 
 COPY --from=0 /blockcrafter/*.whl /blockcrafter/
+COPY --from=0 /blockcrafter/*.patch /blockcrafter/
 RUN rm -f /blockcrafter/*manylinux1*.whl && pip install /blockcrafter/*.whl
+
+RUN cat /usr/local/lib/python3.9/site-packages/vispy/geometry/torusknot.py
+RUN patch -R /usr/local/lib/python3.9/site-packages/vispy/geometry/torusknot.py /blockcrafter/fractions.patch
 
 COPY entrypoint.sh /
 

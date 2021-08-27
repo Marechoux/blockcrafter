@@ -22,22 +22,29 @@ import math
 import argparse
 import itertools
 import fnmatch
+import hashlib
 from PIL import Image
 from vispy import app, gloo, io, geometry
 
 from blockcrafter import mcmodel
 from blockcrafter import render
 
-COLUMNS = 128
+COLUMNS = 96
 
 class BlockImages:
     def __init__(self):
         self.blocks = []
+        self.ids = dict()
 
     def append(self, array):
+        id = hashlib.sha1(array).hexdigest()
+        if id in self.ids :
+            return self.ids[id]
         image = Image.fromarray(array)
         self.blocks.append(image)
-        return len(self.blocks) - 1
+        idx = len(self.blocks) - 1
+        self.ids[id] = idx
+        return idx
 
     def export(self, columns):
         w, h = self.blocks[0].size
@@ -145,9 +152,6 @@ class Canvas(app.Canvas):
                     for mode in modes:
                         if not self.args.no_render:
                             gloo.clear(color=True, depth=True)
-                            actual_rotation = rotation
-                            if name == "minecraft:full_water":
-                                actual_rotation = 0
                             if blockstate.disable_blending or mode=="uv":
                                 render.set_blending("opaque")
                             else:
@@ -157,7 +161,7 @@ class Canvas(app.Canvas):
                             else:
                                 render.apply_face_culling(on=True)
                             actual_model = render.apply_model_rotation(model, rotation=0)
-                            glblock.render(conditions, variant_idx, actual_model, view, projection, rotation=actual_rotation, mode=mode)
+                            glblock.render(conditions, variant_idx, actual_model, view, projection, rotation=rotation, mode=mode)
 
                         array = np.array(fbo.read("color"))
                         if blockstate.disable_blending:
@@ -167,34 +171,7 @@ class Canvas(app.Canvas):
                         index = images.append(array)
                         indices.append(index)
                     variant_idx += 1
-
-                # waterlogged blocks need several variants written out
-                if blockstate.waterloggable:
-                    conditions = dict(conditions)
-                    # 1. waterlogged version (will get water on top)
-                    # (some blocks are always waterlogged, they don't have the waterlogged property)
-                    if not blockstate.inherently_waterlogged:
-                        conditions["waterlogged"] = "true"
-                    write_block_info(blockstate, conditions, indices)
-
-                    # 2. non-waterlogged version
-                    # (only blocks that are not always waterlogged need this)
-                    if not blockstate.inherently_waterlogged:
-                        conditions["waterlogged"] = "false"
-                        write_block_info(blockstate, conditions, indices)
-
-                    # 3. blocks that are waterlogged in Minecraft but don't get the water on top in Mapcrafter
-                    # (because there is water on top already, Mapcrafter needs this extra state internally)
-                    conditions["was_waterlogged"] = "true"
-                    conditions["waterlogged"] = "false"
-                    write_block_info(blockstate, conditions, indices)
-
-                    # Remove the keys as we may be looping and reuse the 'conditions' object
-                    conditions.pop("was_waterlogged", None)
-                    conditions.pop("waterlogged", None)
-                else:
-                    # normal blocks just get their info written out
-                    write_block_info(blockstate, conditions, indices)
+                write_block_info(blockstate, conditions, indices)
 
         if not self.args.no_render:
             images.export(columns=COLUMNS).save(image_path)
