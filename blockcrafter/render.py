@@ -463,24 +463,25 @@ class Block:
     def __init__(self, blockstate):
         self.blockstate = blockstate
         self.models = {}
-        self.variants = {}
+        self.conditions = {}
 
-    def _load_variant(self, variant, alt):
+    def _load_condition(self, condition, alt):
         modelrefs = []
-        for model, transformation in self.blockstate.evaluate_variant(variant, alt):
+        for model, transformation in self.blockstate.evaluate_condition(condition, alt):
             if not model.name in self.models:
                 self.models[model.name] = Model(model)
             modelrefs.append((self.models[model.name], transformation))
         return modelrefs
 
-    def render(self, variant, alt, model, view, projection, rotation=0, mode="color"):
-        variant_str = mcmodel.encode_variant(variant) + "#" + str(alt)
-        if variant_str not in self.variants:
-            self.variants[variant_str] = self._load_variant(variant, alt)
+    def render(self, condition, alt, model, view, projection, rotation=0, mode="color"):
+        condition_str = mcmodel.encode_condition(condition) + "#" + str(alt)
+        if condition_str not in self.conditions:
+            self.conditions[condition_str] = self._load_condition(condition, alt)
 
-        modelrefs = self.variants[variant_str]
+        modelrefs = self.conditions[condition_str]
         for glmodel, transformation  in modelrefs:
             glmodel.render(model, view, projection, block_rotation=rotation, mode=mode, modelref=transformation)
+        return len(modelrefs) != 0
 
 def create_transform_ortho(aspect=1.0, view="isometric", fake_ortho=True):
     model = np.eye(4, dtype=np.float32)

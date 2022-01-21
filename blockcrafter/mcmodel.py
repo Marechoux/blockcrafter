@@ -52,7 +52,7 @@ class BlockstateProperties:
             assert len(parts) == 2, "Invalid line '%s'" % line
 
             name = parts[0]
-            p = parse_variant(parts[1])
+            p = parse_condition(parts[1])
             properties.add(name, p)
         f.close()
         return properties
@@ -75,7 +75,7 @@ def load_blockstate_properties():
         assert len(parts) == 2, "Invalid line '%s'" % line
 
         name = parts[0]
-        p = parse_variant(parts[1])
+        p = parse_condition(parts[1])
         properties[name] = p
     f.close()
     return properties
@@ -183,7 +183,8 @@ class EntityTextureSource:
             return {}
         image = Image.open(source.open_file(path)).convert("RGBA")
         w, h = image.size
-        assert w == h
+        if w != h:
+            image = image.crop([0,0,w,w])
         f = w / 64
 
         front = image.crop((int(f * 42), int(f * 33), int(f * 56), int(f * (33+15))))
@@ -483,6 +484,7 @@ class Blockstate:
         self.prefix = prefix
         self.name = name
         self.data = data
+        self.variant_cnt = {}
 
         self.extra_properties = properties
         self.waterloggable = properties.get("is_waterloggable", "") == "true"
@@ -512,12 +514,12 @@ class Blockstate:
         self.properties = self._get_properties()
         self.variants = self._get_variants(self.properties)
     
-    def evaluate_variant(self, variant, alt = 0):
+    def evaluate_condition(self, eval_condition, alt = 0):
         modelrefs = []
         if "variants" in self.data:
             for condition, model in self.data["variants"].items():
-                condition = parse_variant(condition)
-                if is_condition_fulfilled(condition, variant):
+                condition = parse_condition(condition)
+                if is_condition_fulfilled(condition, eval_condition):
                     if isinstance(model, list):
                         modelrefs.append(model)
                     else:
@@ -530,19 +532,18 @@ class Blockstate:
 
                 when = part["when"]
                 if len(when) == 1 and "OR" in when:
-                    if any(map(lambda c: is_condition_fulfilled(c, variant), when["OR"])):
+                    if any(map(lambda c: is_condition_fulfilled(c, eval_condition), when["OR"])):
                         if("apply" in part):
                             modelrefs.append(part["apply"])
                 else:
-                    if is_condition_fulfilled(when, variant):
+                    if is_condition_fulfilled(when, eval_condition):
                         if("apply" in part):
                             modelrefs.append(part["apply"])
-        else:
-            assert False, "There must be variants defined!"
 
         evaluated = []
         for modelref in modelrefs:
             if isinstance(modelref, list):
+                if alt >= len(modelref): continue
                 modelref = modelref[alt]
             if "model" in modelref:
                 model_name = modelref["model"]
@@ -554,6 +555,13 @@ class Blockstate:
                 model = self.assets.get_model(self.prefix + "/models/" + model_name + ".json")
                 evaluated.append((model, model_transformation))
         return evaluated
+
+    def countVariants(self, condition):
+        condition = encode_condition(condition)
+        if condition in self.variant_cnt:
+            return self.variant_cnt[condition]
+        else:
+            return 1
 
     def _get_properties(self):
         variables = {}
@@ -578,10 +586,12 @@ class Blockstate:
         if "variants" in self.data:
             for condition, variant in self.data["variants"].items():
                 # Check if it's a block with variant renders
-                if condition == "" and len(variant) > 1:
-                    self.extra_properties["variant_cnt"] = str(len(variant))
-                else:
-                    apply_condition(parse_variant(condition))
+                parsed_condition = parse_condition(condition)
+                if isinstance(variant, list) & (len(variant) > 1):
+                    hash_condition = encode_condition(parsed_condition)
+                    self.variant_cnt[hash_condition] = len(variant)
+                if condition != "":
+                    apply_condition(parsed_condition)
         elif "multipart" in self.data:
             for part in self.data["multipart"]:
                 if not "when" in part:
@@ -593,8 +603,6 @@ class Blockstate:
                         apply_condition(condition)
                 else:
                     apply_condition(when)
-        else:
-            assert False, "There must be variants defined!"
         return variables
 
     def _get_variants(self, properties):
@@ -662,15 +670,15 @@ class Model:
 #        return None
 #    return resolve_texture(texturesdef, texturesdef[name])
 
-def parse_variant(condition):
+def parse_condition(condition):
     if condition == "" or condition == "-":
         return {}
     return dict(map(lambda pair: pair.split("="), condition.split(",")))
 
-def encode_variant(variant):
-    if len(variant) == 0:
+def encode_condition(condition):
+    if len(condition) == 0:
         return "-"
-    items = list(filter(lambda x: (x[0] != "default_variant"), list(variant.items())))
+    items = list(filter(lambda x: (x[0] != "default_variant"), list(condition.items())))
     items.sort(key = lambda i: i[0])
     return ",".join(map(lambda i: "=".join(i), items))
 

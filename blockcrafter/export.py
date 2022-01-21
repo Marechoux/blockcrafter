@@ -132,7 +132,7 @@ class Canvas(app.Canvas):
                 idx += 1
             properties["color"] = ":".join(colorsIdx)
             properties["uv"] = ":".join(uvsIdx)
-            print("%s %s %s" % (name, mcmodel.encode_variant(conditions), mcmodel.encode_variant(properties)), file=finfo)
+            print("%s %s %s" % (name, mcmodel.encode_condition(conditions), mcmodel.encode_condition(properties)), file=finfo)
 
         images = BlockImages()
         for blockstate in blockstates:
@@ -143,10 +143,8 @@ class Canvas(app.Canvas):
             for _dummy_, conditions in enumerate(blockstate.variants):
                 # Get the number of alternatives model to render, and loop through them
                 variant_idx = 0
-                variant_cnt = 1
+                variant_cnt = blockstate.countVariants(conditions)
                 indices = []
-                if "variant_cnt" in blockstate.extra_properties:
-                    variant_cnt = int(blockstate.extra_properties["variant_cnt"])
                 while variant_idx < variant_cnt:
                     modes = ["color", "uv"]
                     for mode in modes:
