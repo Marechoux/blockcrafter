@@ -402,7 +402,7 @@ class Element:
             # TODO, cache loaded and processed textures!
             texture_name = model.resolve_texture(facedef["texture"])
             if texture_name is None:
-                raise RuntimeError("Face in direction '%s' has no texture associated" % direction)
+                continue # continue and ignore the face
             f = model.load_texture(texture_name)
             uvs = np.array(facedef.get("uv", [0, 0, 16, 16]), dtype=np.float32) / 16.0
             uv0, uv1 = uvs[:2], uvs[2:]

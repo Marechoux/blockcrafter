@@ -17,6 +17,7 @@
 
 import os
 import io
+import re
 import glob
 import json
 import zipfile
@@ -550,6 +551,9 @@ class Blockstate:
                 # The model can have the minecraft: namespace in it since 1.16
                 if model_name.startswith(self.MINECRAFT_NAMESPACE):
                     model_name = model_name[len(self.MINECRAFT_NAMESPACE):]
+                # Make sure there's a folder specified, otherwise use the "block/" by default
+                if not re.match(r"\w+/", model_name):
+                    model_name = "block/" + model_name
                 model_transformation = dict(modelref)
                 del model_transformation["model"]
                 model = self.assets.get_model(self.prefix + "/models/" + model_name + ".json")
@@ -671,9 +675,10 @@ class Model:
 #    return resolve_texture(texturesdef, texturesdef[name])
 
 def parse_condition(condition):
-    if condition == "" or condition == "-":
+    splits = re.findall(r"(\w+)=([\w:;]+),?", condition)
+    if len(splits) == 0:
         return {}
-    return dict(map(lambda pair: pair.split("="), condition.split(",")))
+    return dict(splits)
 
 def encode_condition(condition):
     if len(condition) == 0:
