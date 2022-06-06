@@ -1,11 +1,4 @@
 {
-    "textures": {
-        "post": "entity/signs/birch/post",
-        "front": "entity/signs/birch/front",
-        "back" : "entity/signs/birch/back",
-        "side": "entity/signs/birch/side",
-        "top": "entity/signs/birch/top"
-    },
     "elements": [
         {
             "comment" : "sign",

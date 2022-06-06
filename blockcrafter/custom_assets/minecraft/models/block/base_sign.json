@@ -1,0 +1,27 @@
+{
+    "elements": [
+        {
+            "comment" : "post",
+            "from": [ 7, 0, 7 ],
+            "to": [ 9, 8, 9 ],
+            "faces": {
+                "north":  { "uv": [ 0, 0, 16, 16 ], "texture": "#post" },
+                "south":  { "uv": [ 0, 0, 16, 16 ], "texture": "#post" },
+                "east":  { "uv": [ 0, 0, 16, 16 ], "texture": "#post" },
+                "west":  { "uv": [ 0, 0, 16, 16 ], "texture": "#post" }
+            }
+        },
+        {
+            "comment" : "sign",
+            "from": [ 0, 8, 7 ],
+            "to": [ 16, 16, 9 ],
+            "faces": {
+                "up" :  { "uv": [ 0, 0, 16, 16 ], "texture": "#top" },
+                "north":  { "uv": [ 0, 0, 16, 16 ], "texture": "#back" },
+                "south":  { "uv": [ 0, 0, 16, 16 ], "texture": "#front" },
+                "east":  { "uv": [ 0, 0, 16, 16 ], "texture": "#side" },
+                "west":  { "uv": [ 0, 0, 16, 16 ], "texture": "#side" }
+            }
+        }
+    ]
+}

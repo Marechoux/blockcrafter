@@ -1,22 +1,4 @@
-Model issue
-- Cake with candles
-- conduit missing
-- Flags
+Missing models
+- conduit
 - heads (zombie, skeleton, dragon, player, creeper)
-
-Texture issue
-- 1 side of stiky piston block
-- Hoppers
-- powder snow
-- quartz_bricks
-- scafolding
-- campfire
-- compost
-
-To check
-- Cauldron
-- quartz
-
-Missing
-- heads
 - banners

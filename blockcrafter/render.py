@@ -34,72 +34,78 @@ uniform mat4 u_model;
 uniform mat4 u_view;
 uniform mat4 u_projection;
 uniform mat4 u_texcoord;
+uniform mat4 u_normal;
 
 varying vec3 v_position;
 varying vec2 v_texcoord;
-varying vec2 v_texcoord0;
 varying vec3 v_normal;
+varying float v_face;
 
 void main() {
     v_position = a_position;
-
-    // TODO this seems to cause a slight interpolation somehow
-    v_texcoord = (u_texcoord * (vec4(a_texcoord - 0.5, 0.0, 1.0))).xy + 0.5;
-    v_texcoord0 = a_texcoord;
     v_normal = a_normal;
+
+    v_texcoord = (u_texcoord * (vec4(a_texcoord - 0.5, 0.0, 1.0))).xy + 0.5;
+
+    /*
+    Detect the quadrant the face is in, by looking at the normal after block rotation
+    0 - west
+    1 - east
+    2 - up
+    3 - down
+    4 - south
+    5 - north
+    */
+    vec4 t_nor = u_normal * vec4(a_normal, 0.0);
+    vec4 t_norabs = abs(t_nor);
+    if (t_norabs.x > t_norabs.y) {
+        if (t_norabs.x > t_norabs.z) {
+            if (t_norabs.x > 0) {
+                v_face = 1.0 / 6.0; // East
+            } else {
+                v_face = 0.0 / 6.0; // West
+            }
+        } else {
+            if (t_norabs.z > 0) {
+                v_face = 4.0 / 6.0; // South
+            } else {
+                v_face = 5.0 / 6.0; // North
+            }
+        }
+    } else {
+        if (t_norabs.y > t_norabs.z) {
+            if (t_norabs.y > 0) {
+                v_face = 2.0 / 6.0; // Up
+            } else {
+                v_face = 3.0 / 6.0; // Down
+            }
+        } else {
+            if (t_norabs.z > 0) {
+                v_face = 4.0 / 6.0; // South
+            } else {
+                v_face = 5.0 / 6.0; // North
+            }
+        }
+    }
 
     gl_Position = u_projection * u_view * u_model * vec4(a_position, 1.0);
 }
 """
 
 FRAGMENT_BLOCK_COLOR = """
-uniform mat4 u_model;
-uniform mat4 u_view;
-uniform mat4 u_projection;
-uniform mat4 u_normal;
-
 uniform sampler2D u_texture;
-uniform vec3 u_light_direction;
-uniform int u_face_index;
 
-varying vec3 v_position;
 varying vec2 v_texcoord;
-varying vec2 v_texcoord0;
 varying vec3 v_normal;
 
 void main() {
     vec4 t_color = texture2D(u_texture, v_texcoord);
 
-    //vec4 t_color0 = texture2D(u_texture, v_texcoord0);
     if (t_color.a <= 0.00001) {
         discard;
     }
 
     gl_FragColor = t_color;
-
-    /*
-    // debugging for uvlock-rotated textures
-    //t_color.rgb = mix(t_color.rgb, t_color0.rgb, 0.2);
-
-    // calculate normal in eye space
-    vec3 n = normalize((u_normal * vec4(v_normal, 1.0)).xyz);
-
-    // two dot products and then max out of it because
-    // I don't care so much about backsides not lit
-    float d1 = dot(n,  u_light_direction);
-    float d2 = dot(-n, u_light_direction);
-    float d = max(d1, d2);
-
-    // intensity of the light
-    // the sqrt is just a mapping how I think it looks nice
-    float intensity = min(max(d, 0.0), 1.0);
-    intensity = sqrt(intensity);
-    //gl_FragColor = vec4(vec3(intensity), 1.0);
-
-    // how much is light applied
-    float alpha = 1.0;
-    gl_FragColor = vec4(t_color.rgb * (alpha * intensity + (1.0 - alpha)), t_color.a);
-    */
 }
 """
 
@@ -110,12 +116,10 @@ uniform mat4 u_projection;
 uniform mat4 u_normal;
 
 uniform sampler2D u_texture;
-uniform vec3 u_light_direction;
-uniform int u_face_index;
-
 varying vec3 v_position;
-varying vec2 v_texcoord;
 varying vec3 v_normal;
+varying vec2 v_texcoord;
+varying float v_face;
 
 void main() {
     vec4 t_color = texture2D(u_texture, v_texcoord);
@@ -123,16 +127,41 @@ void main() {
         discard;
     }
 
-    float face = float(u_face_index) / 6.0;
-
     // Process the value of the Z position and scale it to be
     // stored in the alpha channel of pixel, hence why
     // the blending is disabled for UV mode.
     // It's purpose is mainly to merge blocks, such as waterlog
-    vec4 t_rot = u_model * vec4(v_position, 1.0);
-    float t_z = min(max(((t_rot.z + 1.0) * 0.5) * 255.0/256.0 + 1.0/256.0, 1.0/256.0), 1.0);
+    vec4 t_modelrot = u_model * vec4(v_position, 1.0);
+    float t_z = min(max(((t_modelrot.z + 1.0) * 0.5) * 255.0/256.0 + 1.0/256.0, 1.0/256.0), 1.0);
 
-    gl_FragColor = vec4(vec3(v_texcoord.xy, face), t_z);
+    vec4 t_normalrot = u_normal * vec4(v_position, 1.0);
+    vec4 t_cap = min(max(((t_normalrot + 1.0) * 0.5) * 255.0/256.0 + 1.0/256.0, 1.0/256.0), 1.0);
+
+    vec2 t_uv;
+    if (v_face >= 5.0/6.0) {
+        t_uv = t_cap.xy;
+        t_uv = vec2(0.0, 1.0) + t_uv * vec2(1.0, -1.0);
+    } else
+    if (v_face >= 4.0/6.0) {
+        t_uv = t_cap.xy;
+        t_uv = vec2(0.0, 1.0) + t_uv * vec2(1.0, -1.0);
+    } else
+    if (v_face >= 3.0/6.0) {
+        t_uv = t_cap.xz;
+    } else
+    if (v_face >= 2.0/6.0) {
+        t_uv = t_cap.xz;
+    } else
+    if (v_face >= 1.0/6.0) {
+        t_uv = t_cap.zy;
+        t_uv = vec2(0.0, 1.0) + t_uv * vec2(1.0, -1.0);
+    } else
+    {
+        t_uv = t_cap.zy;
+        t_uv = vec2(0.0, 1.0) + t_uv * vec2(1.0, -1.0);
+    }
+
+    gl_FragColor = vec4(t_uv.xy, v_face, t_z);
 }
 """
 
@@ -192,46 +221,40 @@ def angle_between(v1, v2):
 class Element:
 
     CUBE_POINTS = [
-        [ 1,  1,  1],
-        [ 1,  1, -1],
-        [-1,  1, -1],
-        [-1,  1,  1],
-        [ 1, -1,  1],
-        [ 1, -1, -1],
-        [-1, -1, -1],
-        [-1, -1,  1],
+        [-1, -1, -1], # V1
+        [ 1, -1, -1], # V2
+        [ 1,  1, -1], # V3
+        [-1,  1, -1], # V4
+
+        [-1, -1,  1], # V5
+        [ 1, -1,  1], # V6
+        [ 1,  1,  1], # V7
+        [-1,  1,  1], # V8
     ]
 
     CUBE_FACES = [
-        [1, 0, 4, 5],
-        [3, 2, 6, 7],
-        [1, 2, 3, 0],
-        [6, 5, 4, 7],
-        [0, 3, 7, 4],
-        [2, 1, 5, 6],
-    ]
-
-    CUBE_TEXCOORDS = [
-        ( 1, -1),
-        (-1, -1),
-        (-1,  1),
-        ( 1,  1),
+        [5, 4, 0, 1], # V6, V5, V1, V2  down
+        [7, 6, 2, 3], # V3, V4, V8, V7  up x
+        [1, 0, 3, 2], # V2, V1, V4, V3  north
+        [4, 5, 6, 7], # V5, V6, V7, V8  south
+        [0, 4, 7, 3], # V1, V5, V8, V4  west
+        [5, 1, 2, 6], # V6, V2, V3, V7  east
     ]
 
     CUBE_NORMALS = [
-        [1,  0,  0],
-        [-1, 0,  0],
-        [0,  1,  0],
-        [0, -1,  0],
-        [0,  0,  1],
-        [0,  0, -1],
+        [  0, -1,  0], # down
+        [  0,  1,  0], # up
+        [  0,  0, -1], # north
+        [  0,  0,  1], # south
+        [ -1,  0,  0], # west
+        [  1,  0,  0], # east
     ]
 
     CUBE_TEXTURE_DIRS = [
-        [0, 1, 0],
-        [0, 1, 0],
         [0, 0, -1],
         [0, 0, -1],
+        [0, 1, 0],
+        [0, 1, 0],
         [0, 1, 0],
         [0, 1, 0],
     ]
@@ -278,39 +301,38 @@ class Element:
 
         points = self.points[Element.CUBE_FACES[face_index]].astype(np.float32)
         normal = np.array(Element.CUBE_NORMALS[face_index], dtype=np.float32)
-        program["a_position"].set_data(points + 0.00001 * normal)
+
+        program["a_position"].set_data(points)
         program["a_normal"].set_data(np.stack([normal] * 4))
 
-        uv0, uv1 = uvs
-        scale = (uv1 - uv0) * 0.5
-        translate = (uv1 + uv0) * 0.5
-        program["a_texcoord"] = np.array(Element.CUBE_TEXCOORDS, dtype=np.float32) * scale + translate
+        program["a_texcoord"] = np.array(uvs, dtype=np.float32)
 
         # ---
         # --- set up uniforms ###
         # ---
 
-        # we need to do some transformation magic to handle uvlock correctly
-
-        # actual texture dir in model coordinates
-        texture_dir = np.array(Element.CUBE_TEXTURE_DIRS[face_index], dtype=np.float32)
-
-        # I am going to speak about world coordinates now
-        # but actually I mean the model coordinates after element is rotated by element/block
-
-        # get the face normal in world coordinates to determine where texture should point to
-        # (that face normal in world coordinates describes as which face actually this face appears to viewer)
-        cube_normal = np.round(np.dot(np.append(normal, [0]), element_transform)[:3])
-
         # if uvlock is wanted, apply correction now to texture
         if uvlock:
+
+            # we need to do some transformation magic to handle uvlock correctly
+
+            # I am going to speak about world coordinates now
+            # but actually I mean the model coordinates after element is rotated by element/block
+
+            # get the face normal in world coordinates to determine where texture should point to
+            # (that face normal in world coordinates describes as which face actually this face appears to viewer)
+            cube_normal = np.round(np.dot(np.append(normal, [0]), element_transform)[:3])
+
+            # actual texture dir in model coordinates
+            texture_dir = np.array(Element.CUBE_TEXTURE_DIRS[face_index], dtype=np.float32)
+
             target_texture_dir = None
             if abs(cube_normal[1]) > 0.001:
                 # top face, should point to east
-                target_texture_dir = np.array(Element.CUBE_TEXTURE_DIRS[2], dtype=np.float32)
+                target_texture_dir = np.array(Element.CUBE_TEXTURE_DIRS[0], dtype=np.float32)
             else:
                 # side face, should point to top
-                target_texture_dir = np.array(Element.CUBE_TEXTURE_DIRS[0], dtype=np.float32)
+                target_texture_dir = np.array(Element.CUBE_TEXTURE_DIRS[2], dtype=np.float32)
             # go from world -> model
             element_transform_inv = np.array(np.matrix(element_transform).I)
             target_texture_dir = np.round(np.dot(np.append(target_texture_dir, [0]), element_transform_inv)[:3]).astype(np.float32)
@@ -323,26 +345,11 @@ class Element:
                 angle = 360 - angle
 
             program["u_texcoord"] = transforms.rotate(angle, (0, 0, 1))
+
         else:
             program["u_texcoord"] = np.eye(4, dtype=np.float32)
 
         program["u_texture"] = texture
-        program["u_light_direction"] = [-0.1, 1.0, 1.0]
-
-        # we pass index of face to shader too
-        # (mostly for the shader that exports uv coordinates)
-
-        if uvlock:
-            # find face index if element wouldn't be rotated (as which face it appears to viewer)
-            # faces rotated not by x*90 degrees just get face index 6
-            actual_face = 6
-            for i in range(6):
-                if np.allclose(Element.CUBE_NORMALS[i], cube_normal):
-                    actual_face = i
-                    break
-            program["u_face_index"] = actual_face
-        else:
-            program["u_face_index"] = face_index
 
         # ---
         # --- actual drawing ---
@@ -378,47 +385,85 @@ class Element:
         program["u_model"] = complete_model
         program["u_view"] = view
         program["u_projection"] = projection
-        #program["u_normal"] = np.array(np.matrix(np.dot(view, complete_model)).I.T)
+        program["u_normal"] = element_transform
 
         for i, (texture, uvs) in enumerate(self.faces):
             if texture is None:
                 continue
-            self.render_face(i, texture, uvs, complete_model, view, projection, element_rotation=element_rotation, element_transform=element_transform, uvlock=uvlock or mode == "uv")
+            self.render_face(i, texture, uvs, complete_model, view, projection, element_rotation=element_rotation, element_transform=element_transform, uvlock=uvlock and mode != "uv")
+
+    @staticmethod
+    def getShiftedIndex(idx, rot):
+        return (idx + rot / 90) % 4
+    @staticmethod
+    def getReverseIndex(idx, rot):
+        return (idx + 4 - rot / 90) % 4
+    @staticmethod
+    def getU(uvs, idx, rot):
+        idx = Element.getShiftedIndex(idx, rot)
+        return uvs[(idx != 0 and idx != 1) * 2]
+    @staticmethod
+    def getV(uvs, idx, rot):
+        idx = Element.getShiftedIndex(idx, rot)
+        return uvs[(idx != 0 and idx != 3) * 2 + 1]
 
     @staticmethod
     def load_faces(model, element):
         # order of minecraft directions to order of cube sides
         mc_to_opengl = [
-            "east",   # pos x
-            "west",   # neg x
-            "up",     # pos y
-            "down",   # neg y
-            "south",  # pos z
-            "north",  # neg z
+            "down",   # neg y # 0
+            "up",     # pos y # 1
+            "north",  # neg z # 2
+            "south",  # pos z # 3
+            "west",   # neg x # 4
+            "east",   # pos x # 5
         ]
 
         faces = {}
         for direction, facedef in element["faces"].items():
-            # TODO, cache loaded and processed textures!
             texture_name = model.resolve_texture(facedef["texture"])
             if texture_name is None:
                 continue # continue and ignore the face
             f = model.load_texture(texture_name)
-            uvs = np.array(facedef.get("uv", [0, 0, 16, 16]), dtype=np.float32) / 16.0
-            uv0, uv1 = uvs[:2], uvs[2:]
 
             image = Image.open(f).convert("RGBA")
             if texture_name.startswith("block/") and image.size[0] != image.size[1]:
                 assert image.size[0] < image.size[1]
                 s = image.size[0]
                 image = image.crop((0, 0, s, s))
-            if "rotation" in facedef:
-                image = image.rotate(-facedef["rotation"])
+
+            uvs = np.array(facedef.get("uv", []), dtype=np.float32)
+            # If no UVs are provided, auto-define UVs by the position and direction of the face
+            if len(uvs) != 4:
+                xyz0 = element["from"]
+                xyz1 = element["to"]
+                if direction == "down":
+                    uvs = np.array([xyz0[0], 16 - xyz1[2], xyz1[0], 16 - xyz0[2]], dtype=np.float32)
+                elif direction == "up":
+                    uvs = np.array([xyz0[0], xyz0[2], xyz1[0], xyz1[2]], dtype=np.float32)
+                elif direction == "north":
+                    uvs = np.array([16 - xyz1[0], 16 - xyz1[1], 16 - xyz0[0], 16 - xyz0[1]], dtype=np.float32)
+                elif direction == "south":
+                    uvs = np.array([xyz0[0], 16 - xyz1[1], xyz1[0], 16 - xyz0[1]], dtype=np.float32)
+                elif direction == "west":
+                    uvs = np.array([xyz0[2], 16 - xyz1[1], xyz1[2], 16 - xyz0[1]], dtype=np.float32)
+                elif direction == "east":
+                    uvs = np.array([16 - xyz1[2], 16 - xyz1[1], 16 - xyz0[2], 16 - xyz0[1]], dtype=np.float32)
+                else:
+                    # Like north if we don't know the direction, which should not happen
+                    uvs = np.array([16 - xyz1[0], 16 - xyz1[1], 16 - xyz0[0], 16 - xyz0[1]], dtype=np.float32)
+
+            rotation = facedef.get("rotation", 0)
+            uvs = uvs / 16.0
+            uv0 = [Element.getU(uvs, 1, rotation), Element.getV(uvs, 1, rotation)]
+            uv1 = [Element.getU(uvs, 2, rotation), Element.getV(uvs, 2, rotation)]
+            uv2 = [Element.getU(uvs, 3, rotation), Element.getV(uvs, 3, rotation)]
+            uv3 = [Element.getU(uvs, 0, rotation), Element.getV(uvs, 0, rotation)]
 
             data = np.array(image)
             semi_transparent = np.all((data[:, :, 3] == 0) | (data[:, :, 3] == 255))
             w, h = image.size
-            image = image.resize((w*2, h*2), resample=Image.NEAREST)
+            image = image.resize((w*3, h*3), resample=Image.NEAREST)
             data = np.array(image)
             if semi_transparent:
                 data[:, :, 3] = (data[:, :, 3] > 255/2.0) * 255
@@ -428,11 +473,11 @@ class Element:
                 data[:, :, 0] = data[:, :, 0] * r
                 data[:, :, 1] = data[:, :, 1] * g
                 data[:, :, 2] = data[:, :, 2] * b
-            faces[direction] = (gloo.Texture2D(data=data, interpolation="linear"), (uv0, uv1))
+            faces[direction] = (gloo.Texture2D(data=data, interpolation="linear"), (uv0, uv1, uv2, uv3))
             f.close()
 
         # gather faces in order for cube sides
-        # remember: each side is (texture, (uv0, uv1))
+        # remember: each side is (texture, (uv0, uv1, uv2, uv3))
         sides = [ faces.get(direction, None) for direction in mc_to_opengl ]
         # so this is how an non-existant side looks like
         empty = (None, None)

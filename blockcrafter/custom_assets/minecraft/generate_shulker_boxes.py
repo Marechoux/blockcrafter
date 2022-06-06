@@ -12,7 +12,8 @@ for color in ["", "white", "orange", "magenta", "light_blue", "yellow", "lime", 
     "parent" : "block/base_shulker_box",
     "textures":  {{
         "side": "entity/shulker/{texture_name}/side",
-        "top": "entity/shulker/{texture_name}/top"
+        "top": "entity/shulker/{texture_name}/top",
+        "bottom": "entity/shulker/{texture_name}/bottom"
     }}
     }}""".format(texture_name=texture_name))
     f.close()

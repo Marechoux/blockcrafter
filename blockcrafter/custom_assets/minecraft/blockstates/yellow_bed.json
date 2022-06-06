@@ -10,4 +10,4 @@
         "part=foot,facing=east": { "model": "block/yellow_bed_foot", "y": 90 },
         "part=foot,facing=west": { "model": "block/yellow_bed_foot", "y": 270 }
     }
-    }
+}

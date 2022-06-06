@@ -148,7 +148,8 @@ class MultipleSources:
                 return f
             except Exception as e:
                 pass
-        raise RuntimeError("Unable to find file '%s' in any source!" % path)
+        print("Unable to find file '" + path + "' in any source!")
+        return
 
     def load_file(self, path):
         f = self.open_file(path)
@@ -302,6 +303,7 @@ class EntityTextureSource:
         files = {}
         files[base_name + "side.png"] = pack_image(side)
         files[base_name + "top.png"] = pack_image(image.crop((int(f * 16), int(f * 0), int(f * 32), int(f * 16))))
+        files[base_name + "bottom.png"] = pack_image(image.crop((int(f * 32), int(f * 28), int(f * 48), int(f * 44))))
         return files
 
     def create_bed_files(self, source, path):
@@ -394,10 +396,14 @@ class Assets:
     @staticmethod
     def create(asset_paths):
         sources = []
+        entityTexture = False
         for path in reversed(asset_paths):
+            print("Adding asset source:", path)
             source = create_source(path)
             sources.append(source)
-            sources.append(EntityTextureSource(source))
+            if(not entityTexture):
+                entityTexture = True
+                sources.append(EntityTextureSource(source))
         sources.insert(0, create_builtin_source())
         return Assets(MultipleSources(sources))
 
@@ -470,7 +476,9 @@ class Assets:
     def models(self):
         models = []
         for path in self.model_files:
-            models.append(self.get_model(path))
+            m = self.get_model(path)
+            if(m):
+                models.append(m)
         return models
 
     def load_texture(self, prefix, path):
