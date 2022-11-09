@@ -396,14 +396,14 @@ class Assets:
     @staticmethod
     def create(asset_paths):
         sources = []
-        entityTexture = False
+        # entityTexture = False
         for path in reversed(asset_paths):
             print("Adding asset source:", path)
             source = create_source(path)
             sources.append(source)
-            if(not entityTexture):
-                entityTexture = True
-                sources.append(EntityTextureSource(source))
+            # if(not entityTexture):
+                # entityTexture = True
+            sources.append(EntityTextureSource(source))
         sources.insert(0, create_builtin_source())
         return Assets(MultipleSources(sources))
 
@@ -683,7 +683,7 @@ class Model:
 #    return resolve_texture(texturesdef, texturesdef[name])
 
 def parse_condition(condition):
-    splits = re.findall(r"(\w+)=([\w:;]+),?", condition)
+    splits = re.findall(r"(\w+)=([\w:#|;]+),?", condition)
     if len(splits) == 0:
         return {}
     return dict(splits)

@@ -22,6 +22,7 @@ import time
 from PIL import Image
 from vispy import app, gloo, geometry
 from vispy.util import transforms
+from functools import reduce
 
 from blockcrafter import mcmodel
 
@@ -287,25 +288,24 @@ class Element:
         self.xyz0 = (np.array(element["from"]) - 8.0) / 16.0 * 2.0
         self.xyz1 = (np.array(element["to"]) - 8.0) / 16.0 * 2.0
 
-        self.scale = (self.xyz1 - self.xyz0) * 0.5
-        self.translate = (self.xyz1 + self.xyz0) * 0.5
-        self.points = np.array(Element.CUBE_POINTS) * self.scale + self.translate
+        scale = (self.xyz1 - self.xyz0) * 0.5
+        translate = (self.xyz1 + self.xyz0) * 0.5
+        self.points = np.array(Element.CUBE_POINTS) * scale + translate
         self.indices = gloo.IndexBuffer(np.array([0, 1, 2, 0, 2, 3], dtype=np.uint32))
 
-    def render_face(self, face_index, texture, uvs, model, view, projection, element_rotation, element_transform, uvlock):
-        program = self.current_program
+    def render_face(self, face_index, texture, uvs, element_transform, uvlock):
+        rendered_face = {}
 
         # ---
         # --- set up attributes ---#
         # ---
 
-        points = self.points[Element.CUBE_FACES[face_index]].astype(np.float32)
+        rendered_face["a_position"] = self.points[Element.CUBE_FACES[face_index]].astype(np.float32)
+
         normal = np.array(Element.CUBE_NORMALS[face_index], dtype=np.float32)
+        rendered_face["a_normal"] = np.stack([normal] * 4)
 
-        program["a_position"].set_data(points)
-        program["a_normal"].set_data(np.stack([normal] * 4))
-
-        program["a_texcoord"] = np.array(uvs, dtype=np.float32)
+        rendered_face["a_texcoord"] = np.array(uvs, dtype=np.float32)
 
         # ---
         # --- set up uniforms ###
@@ -344,17 +344,17 @@ class Element:
             if direction < 0:
                 angle = 360 - angle
 
-            program["u_texcoord"] = transforms.rotate(angle, (0, 0, 1))
+            rendered_face["u_texcoord"] = transforms.rotate(angle, (0, 0, 1))
 
         else:
-            program["u_texcoord"] = np.eye(4, dtype=np.float32)
+            rendered_face["u_texcoord"] = np.eye(4, dtype=np.float32)
 
-        program["u_texture"] = texture
+        rendered_face["u_texture"] = texture
 
         # ---
         # --- actual drawing ---
         # ---
-        program.draw("triangles", self.indices)
+        rendered_face["triangles"] = self.indices
 
         # old code to debug normals / texture direction stuff
         #center = np.sum(points, axis=0) / len(points) + 0.001 * normal
@@ -364,6 +364,8 @@ class Element:
         #draw_line(center, center + cube_target_texture_dir * 0.5, model, view, projection, (0.0, 1.0, 0.0, 1.0))
         #if direction < 0:
         #    draw_line(center, center + normal * 0.25, model, view, projection, (1.0, 0.0, 0.0, 1.0))
+
+        return rendered_face
 
     def render(self, model, view, projection, mode="color", block_rotation=0, element_transform=np.eye(4, dtype=np.float32), uvlock=False):
         element_rotation = np.eye(4, dtype=np.float32)
@@ -387,21 +389,25 @@ class Element:
                 element_rotation = rescale * element_rotation
 
         program = Element.get_program(mode)
-        self.current_program = program
 
         # add rotation of block and element to element transformation
         block_rotation = transforms.rotate(-90 * block_rotation, (0, 1, 0))
         element_transform = np.dot(element_rotation, np.dot(element_transform, block_rotation))
         complete_model = np.dot(element_transform, model)
-        program["u_model"] = complete_model
-        program["u_view"] = view
-        program["u_projection"] = projection
-        program["u_normal"] = element_transform
 
+        rendered_faces = []
         for i, (texture, uvs) in enumerate(self.faces):
             if texture is None:
                 continue
-            self.render_face(i, texture, uvs, complete_model, view, projection, element_rotation=element_rotation, element_transform=element_transform, uvlock=uvlock and mode != "uv")
+            rface = self.render_face(i, texture, uvs, element_transform=element_transform, uvlock=uvlock and mode != "uv")
+            rface["program"] = program
+            rface["u_model"] = complete_model
+            rface["u_view"] = view
+            rface["u_projection"] = projection
+            rface["u_normal"] = element_transform
+            rendered_faces.append(rface)
+        
+        return rendered_faces
 
     @staticmethod
     def getShiftedIndex(idx, rot):
@@ -511,9 +517,12 @@ class Model:
         if "z" in modelref:
             m = np.dot(m, transforms.rotate(-modelref["z"], (0, 0, 1)))
 
+        rendered_faces = []
         uvlock = modelref.get("uvlock", False)
         for element in self.elements:
-            element.render(model, view, projection, mode=mode, block_rotation=block_rotation, element_transform=m, uvlock=uvlock)
+            rendered_faces = rendered_faces + element.render(model, view, projection, mode=mode, block_rotation=block_rotation, element_transform=m, uvlock=uvlock)
+
+        return rendered_faces
 
 class Block:
     def __init__(self, blockstate):
@@ -534,9 +543,34 @@ class Block:
         if condition_str not in self.conditions:
             self.conditions[condition_str] = self._load_condition(condition, alt)
 
+        rendered_faces = []
+
         modelrefs = self.conditions[condition_str]
         for glmodel, transformation  in modelrefs:
-            glmodel.render(model, view, projection, block_rotation=rotation, mode=mode, modelref=transformation)
+            rendered_faces = rendered_faces + glmodel.render(model, view, projection, block_rotation=rotation, mode=mode, modelref=transformation)
+
+        # Sort faces to render them "back to front" when transparent,
+        # otherwise we see pixel glitch on edges, glass details not rendered, ...
+        def sort_faces(f):
+            middle_point = reduce( lambda a, b: a+b, f["a_position"]) / len(f["a_position"])
+            projected = np.dot( np.dot( np.dot( f["u_projection"], f["u_view"] ), f["u_model"] ), np.append(middle_point, [1.0]) )
+            z = projected[2]
+            return z
+        rendered_faces.sort(key = sort_faces, reverse=True)
+
+        for f in rendered_faces:
+            program = f["program"]
+            program["u_model"] = f["u_model"]
+            program["u_view"] = f["u_view"]
+            program["u_projection"] = f["u_projection"]
+            program["u_normal"] = f["u_normal"]
+            program["a_position"] = f["a_position"]
+            program["a_normal"] = f["a_normal"]
+            program["a_texcoord"] = f["a_texcoord"]
+            program["u_texcoord"] = f["u_texcoord"]
+            program["u_texture"] = f["u_texture"]
+            program.draw("triangles", f["triangles"])
+
         return len(modelrefs) != 0
 
 def create_transform_ortho(aspect=1.0, view="isometric", fake_ortho=True):

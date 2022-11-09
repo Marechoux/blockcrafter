@@ -15,6 +15,7 @@
 # You should have received a copy of the GNU General Public License
 # along with Blockcrafter.  If not, see <http://www.gnu.org/licenses/>.
 
+from cmath import sqrt
 import os
 import sys
 import numpy as np
@@ -23,13 +24,13 @@ import argparse
 import itertools
 import fnmatch
 import hashlib
+import tempfile
 from PIL import Image
 from vispy import app, gloo, io, geometry
 
 from blockcrafter import mcmodel
 from blockcrafter import render
 
-COLUMNS = 96
 
 class BlockImages:
     def __init__(self):
@@ -105,10 +106,10 @@ class Canvas(app.Canvas):
 
         render.set_blending("premultiplied")
 
-        os.makedirs(self.args.output_dir, exist_ok=True)
-        finfo = open(info_path, "w")
-        print("%d %d %d" % (block_size[1], block_size[0], COLUMNS), file=finfo)
 
+        os.makedirs(self.args.output_dir, exist_ok=True)
+        tmpfilepath = tempfile.mktemp()
+        finfo = open(tmpfilepath, "w")
         def is_blockstate_included(name):
             patterns = self.args.blocks
             if patterns is None:
@@ -171,11 +172,18 @@ class Canvas(app.Canvas):
                     variant_idx += 1
                 write_block_info(blockstate, conditions, indices)
 
-        if not self.args.no_render:
-            images.export(columns=COLUMNS).save(image_path)
+        # Guess what would be the best squared picture size to distribute all the blocks
+        best_columns = int(math.sqrt( max(1, len(images.blocks)) ) + 1.0)
 
-        finfo.close()
+        if not self.args.no_render:
+            images.export(columns=best_columns).save(image_path)
         fbo.deactivate()
+        finfo.close()
+
+        with open(tmpfilepath,'r') as firstfile, open(info_path,'w') as secondfile:
+            print("%d %d %d" % (block_size[1], block_size[0], best_columns), file=secondfile)
+            for line in firstfile:
+                secondfile.write(line)
 
     def on_draw(self, event):
         if self.draw_attempt:
