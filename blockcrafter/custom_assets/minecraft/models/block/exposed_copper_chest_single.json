@@ -1,0 +1,11 @@
+{
+    "parent": "block/base_chest_single",
+    "textures": {
+        "front": "entity/chest/copper_exposed/front",
+        "side": "entity/chest/copper_exposed/side",
+        "top": "entity/chest/copper_exposed/top",
+        "thing_front": "entity/chest/copper_exposed/thing_front",
+        "thing_side": "entity/chest/copper_exposed/thing_side",
+        "thing_top": "entity/chest/copper_exposed/thing_top"
+    }
+}

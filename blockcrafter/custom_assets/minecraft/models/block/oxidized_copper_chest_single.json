@@ -1,0 +1,11 @@
+{
+    "parent": "block/base_chest_single",
+    "textures": {
+        "front": "entity/chest/copper_oxidized/front",
+        "side": "entity/chest/copper_oxidized/side",
+        "top": "entity/chest/copper_oxidized/top",
+        "thing_front": "entity/chest/copper_oxidized/thing_front",
+        "thing_side": "entity/chest/copper_oxidized/thing_side",
+        "thing_top": "entity/chest/copper_oxidized/thing_top"
+    }
+}

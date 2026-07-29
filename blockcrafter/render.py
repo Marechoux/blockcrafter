@@ -371,22 +371,29 @@ class Element:
         element_rotation = np.eye(4, dtype=np.float32)
         if self.rotation:
             rotationdef = self.rotation
-            axis = {"x" : [1, 0, 0],
-                    "y" : [0, 1, 0],
-                    "z" : [0, 0, 1]}[rotationdef["axis"]]
             origin = (np.array(rotationdef.get("origin", [8, 8, 8]), dtype=np.float32) - 8.0) / 16.0 * 2.0
-            element_rotation = np.dot(transforms.translate(-origin), np.dot(transforms.rotate(rotationdef["angle"], axis), transforms.translate(origin)))
-            if (rotationdef.get("rescale", False)):
-                rescaleaxis = {
-                    "x" : [0, 1, 1, 0],
-                    "y" : [1, 0, 1, 0],
-                    "z" : [1, 1, 0, 0]}[rotationdef["axis"]]
-                if (abs(rotationdef["angle"]) == 22.5):
-                    rescale = np.array(rescaleaxis, dtype=np.float32) * abs((1.0 / math.cos(math.radians(22.5)) - 1.0))
-                else:
-                    rescale = np.array(rescaleaxis, dtype=np.float32) * abs((1.0 / math.cos(math.radians(45)) - 1.0))
-                rescale = 1 + rescale
-                element_rotation = rescale * element_rotation
+            if "axis" in rotationdef:
+                axis = {"x" : [1, 0, 0],
+                        "y" : [0, 1, 0],
+                        "z" : [0, 0, 1]}[rotationdef["axis"]]
+                element_rotation = np.dot(transforms.translate(-origin), np.dot(transforms.rotate(rotationdef["angle"], axis), transforms.translate(origin)))
+                if (rotationdef.get("rescale", False)):
+                    rescaleaxis = {
+                        "x" : [0, 1, 1, 0],
+                        "y" : [1, 0, 1, 0],
+                        "z" : [1, 1, 0, 0]}[rotationdef["axis"]]
+                    if (abs(rotationdef["angle"]) == 22.5):
+                        rescale = np.array(rescaleaxis, dtype=np.float32) * abs((1.0 / math.cos(math.radians(22.5)) - 1.0))
+                    else:
+                        rescale = np.array(rescaleaxis, dtype=np.float32) * abs((1.0 / math.cos(math.radians(45)) - 1.0))
+                    rescale = 1 + rescale
+                    element_rotation = rescale * element_rotation
+            else:
+                rotations = np.eye(4, dtype=np.float32)
+                for axis_name, axis in (("x", [1, 0, 0]), ("y", [0, 1, 0]), ("z", [0, 0, 1])):
+                    if axis_name in rotationdef:
+                        rotations = np.dot(transforms.rotate(rotationdef[axis_name], axis), rotations)
+                element_rotation = np.dot(transforms.translate(-origin), np.dot(rotations, transforms.translate(origin)))
 
         program = Element.get_program(mode)
 

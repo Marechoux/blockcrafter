@@ -157,6 +157,25 @@ class MultipleSources:
         f.close()
         return data
 
+class FilteredSource:
+    def __init__(self, source, skip):
+        self.source = source
+        self.skip = skip
+
+    def glob_files(self, wildcard):
+        return [path for path in self.source.glob_files(wildcard) if not self.skip(path)]
+
+    def open_file(self, path, mode="r"):
+        if self.skip(path):
+            raise FileNotFoundError(path)
+        return self.source.open_file(path, mode)
+
+    def load_file(self, path):
+        f = self.open_file(path)
+        data = f.read()
+        f.close()
+        return data
+
 def pack_image(image):
     f = io.BytesIO()
     image.save(f, "png")
@@ -349,8 +368,12 @@ class EntityTextureSource:
         files.update(self.create_chest_files(source, "minecraft/textures/entity/chest/normal.png"))
         files.update(self.create_chest_files(source, "minecraft/textures/entity/chest/trapped.png"))
         files.update(self.create_chest_files(source, "minecraft/textures/entity/chest/ender.png"))
+        for chest in ["copper", "copper_exposed", "copper_weathered", "copper_oxidized"]:
+            files.update(self.create_chest_files(source, "minecraft/textures/entity/chest/%s.png" % chest))
         files.update(self.create_double_chest_files(source, "minecraft/textures/entity/chest/normal_left.png", "minecraft/textures/entity/chest/normal_right.png"))
         files.update(self.create_double_chest_files(source, "minecraft/textures/entity/chest/trapped_left.png", "minecraft/textures/entity/chest/trapped_right.png"))
+        for chest in ["copper", "copper_exposed", "copper_weathered", "copper_oxidized"]:
+            files.update(self.create_double_chest_files(source, "minecraft/textures/entity/chest/%s_left.png" % chest, "minecraft/textures/entity/chest/%s_right.png" % chest))
         files.update(self.create_bell_files(source, "minecraft/textures/entity/bell/bell_body.png"))
         files.update(self.create_conduit_files(source, "minecraft/textures/entity/conduit/cage.png"))
         for path in source.glob_files("minecraft/textures/entity/signs/*.png"):
@@ -377,6 +400,23 @@ class EntityTextureSource:
         f.close()
         return data
 
+def has_modern_sign_and_bed_models(source):
+    return (len(source.glob_files("minecraft/models/block/template_bed_head.json")) > 0
+            or len(source.glob_files("minecraft/models/block/oak_sign_rot_0.json")) > 0)
+
+def skip_legacy_sign_and_bed_custom_asset(path):
+    patterns = [
+        "minecraft/blockstates/*_bed.json",
+        "minecraft/models/block/base_bed_*.json",
+        "minecraft/models/block/*_bed_head.json",
+        "minecraft/models/block/*_bed_foot.json",
+        "minecraft/blockstates/*_sign.json",
+        "minecraft/models/block/base_sign.json",
+        "minecraft/models/block/base_wall_sign.json",
+        "minecraft/models/block/*_sign.json",
+    ]
+    return any(fnmatch.fnmatch(path, pattern) for pattern in patterns)
+
 class Assets:
 
     MINECRAFT_NAMESPACE = "minecraft:"
@@ -396,15 +436,20 @@ class Assets:
     @staticmethod
     def create(asset_paths):
         sources = []
+        modern_sign_and_bed_models = False
         # entityTexture = False
         for path in reversed(asset_paths):
             print("Adding asset source:", path)
             source = create_source(path)
+            modern_sign_and_bed_models = modern_sign_and_bed_models or has_modern_sign_and_bed_models(source)
             sources.append(source)
             # if(not entityTexture):
                 # entityTexture = True
             sources.append(EntityTextureSource(source))
-        sources.insert(0, create_builtin_source())
+        builtin_source = create_builtin_source()
+        if modern_sign_and_bed_models:
+            builtin_source = FilteredSource(builtin_source, skip_legacy_sign_and_bed_custom_asset)
+        sources.insert(0, builtin_source)
         return Assets(MultipleSources(sources))
 
     def get_blockstate(self, identifier):
@@ -540,14 +585,9 @@ class Blockstate:
                     continue
 
                 when = part["when"]
-                if len(when) == 1 and "OR" in when:
-                    if any(map(lambda c: is_condition_fulfilled(c, eval_condition), when["OR"])):
-                        if("apply" in part):
-                            modelrefs.append(part["apply"])
-                else:
-                    if is_condition_fulfilled(when, eval_condition):
-                        if("apply" in part):
-                            modelrefs.append(part["apply"])
+                if is_condition_fulfilled(when, eval_condition):
+                    if("apply" in part):
+                        modelrefs.append(part["apply"])
 
         evaluated = []
         for modelref in modelrefs:
@@ -580,20 +620,21 @@ class Blockstate:
 
         def apply_condition(condition):
             nonlocal variables
-            for key, value in condition.items():
-                if key not in variables:
-                    variables[key] = set()
-                    if self.default_variant != None and key in self.default_variant:
-                        variables[key].add(self.default_variant[key])
+            for condition_part in iter_state_conditions(condition):
+                for key, value in condition_part.items():
+                    if key not in variables:
+                        variables[key] = set()
+                        if self.default_variant != None and key in self.default_variant:
+                            variables[key].add(self.default_variant[key])
 
-                if type(value) == bool:
-                    value = "true" if value else "false"
+                    if type(value) == bool:
+                        value = "true" if value else "false"
 
-                values = set([value])
-                if "|" in value:
-                    values = set(value.split("|"))
+                    values = set([value])
+                    if "|" in value:
+                        values = set(value.split("|"))
 
-                variables[key].update(values)
+                    variables[key].update(values)
 
         if "variants" in self.data:
             for condition, variant in self.data["variants"].items():
@@ -609,12 +650,7 @@ class Blockstate:
                 if not "when" in part:
                     continue
                 when = part["when"]
-                if len(when) == 1 and "OR" in when:
-                    conditions = when["OR"]
-                    for condition in conditions:
-                        apply_condition(condition)
-                else:
-                    apply_condition(when)
+                apply_condition(when)
         return variables
 
     def _get_variants(self, properties):
@@ -654,11 +690,17 @@ class Model:
         return self.data["elements"]
 
     def resolve_texture(self, texture):
+        if isinstance(texture, dict):
+            texture = texture.get("sprite", None)
+        if texture is None:
+            return None
         if texture.startswith("#"):
             name = texture[1:]
             if not name in self.textures:
                 return None
             texture = self.resolve_texture(self.textures[name])
+        elif texture in self.textures:
+            texture = self.resolve_texture(self.textures[texture])
         # The data can have the minecraft: namespace in it since 1.16
         if texture != None and texture.startswith(self.MINECRAFT_NAMESPACE):
             texture = texture[len(self.MINECRAFT_NAMESPACE):]
@@ -695,6 +737,15 @@ def encode_condition(condition):
     items.sort(key = lambda i: i[0])
     return ",".join(map(lambda i: "=".join(i), items))
 
+def iter_state_conditions(condition):
+    for key, value in condition.items():
+        if key == "OR" or key == "AND":
+            for child in value:
+                for child_condition in iter_state_conditions(child):
+                    yield child_condition
+        else:
+            yield {key: value}
+
 def is_condition_fulfilled(condition, variant):
 
     # Special case : Empty condition
@@ -704,6 +755,11 @@ def is_condition_fulfilled(condition, variant):
         else:
             return False
 
+    if "OR" in condition and not any(is_condition_fulfilled(c, variant) for c in condition["OR"]):
+        return False
+    if "AND" in condition and not all(is_condition_fulfilled(c, variant) for c in condition["AND"]):
+        return False
+
     # condition and variant are both dictionaries
     # key => value mean that variable 'key' has value 'value'
     # ==> variant variables must have same values as condition
@@ -712,6 +768,8 @@ def is_condition_fulfilled(condition, variant):
     # - values in condition may be of form 'value1|value2' => means that
     #     values 'value1' and 'value2' are acceptable
     for key, value in condition.items():
+        if key == "OR" or key == "AND":
+            continue
         if not key in variant:
             return False
 
